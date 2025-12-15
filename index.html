@@ -1,0 +1,1298 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TextToCAD 3D v0.40</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #333;
+            color: #fff;
+        }
+        header {
+            background: rgba(51, 51, 51, 0.9);
+            padding: 2px 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #555;
+            font-size: 12px;
+            position: relative;
+            min-height: 24px;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 14px;
+            font-weight: bold;
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        header div {
+            display: flex;
+            gap: 5px;
+            z-index: 1;
+        }
+        header button {
+            padding: 2px 6px;
+            font-size: 11px;
+        }
+        
+        /* Bottom Pane */
+        #bottom-pane {
+            height: 100px;
+            display: flex;
+            border-top: 1px solid #555;
+            background: #222;
+            padding: 5px;
+            gap: 5px;
+        }
+        #log {
+            width: 30%;
+            height: 100%;
+            overflow-y: auto;
+            background: #111;
+            color: #0f0;
+            font-family: monospace;
+            padding: 4px;
+            font-size: 11px;
+            border: 1px solid #444;
+            box-sizing: border-box;
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        #log::-webkit-scrollbar {
+            display: none;
+        }
+
+        #command-pane {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 4px;
+            min-width: 0;
+        }
+        #info-bar {
+            font-size: 11px;
+            color: #aaa;
+            display: flex;
+            justify-content: center; 
+            align-items: center;
+            background: #2a2a2a;
+            padding: 2px;
+            border-radius: 4px;
+        }
+        #layer-controls {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            overflow-x: auto;
+            white-space: nowrap;
+            scrollbar-width: none;
+        }
+        #layer-controls::-webkit-scrollbar { display: none; }
+        
+        .layer-toggle {
+            cursor: pointer;
+            padding: 1px 4px;
+            border: 1px solid #555;
+            border-radius: 3px;
+            background: #444;
+            color: #888;
+            user-select: none;
+        }
+        .layer-toggle.visible {
+            background: #007bff;
+            color: #fff;
+            border-color: #0056b3;
+        }
+        
+        #command-area {
+            display: flex;
+            gap: 4px;
+        }
+        #command-input {
+            flex: 1;
+            padding: 4px;
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        button {
+            background: #444;
+            color: #fff;
+            border: 1px solid #666;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+        button:hover { background: #555; }
+
+        /* Overlay Help/Status */
+        #overlay {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            pointer-events: none;
+            color: rgba(255,255,255,0.5);
+            font-family: monospace;
+            font-size: 12px;
+            text-align: right;
+        }
+        #main-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            width: 100%;
+            min-height: 0;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            display: block;
+            background-color: #222;
+        }
+
+        /* Properties Panel */
+        #properties-panel {
+            position: absolute;
+            top: 40px; /* Below Header */
+            right: 10px;
+            width: 220px;
+            background: rgba(40, 40, 40, 0.95);
+            border: 1px solid #555;
+            border-radius: 5px;
+            padding: 10px;
+            display: none; /* Hidden by default */
+            z-index: 100;
+            font-size: 12px;
+            color: #ddd;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+        }
+        #properties-panel h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            border-bottom: 1px solid #555;
+            padding-bottom: 5px;
+            color: #fff;
+        }
+        .prop-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .prop-row label {
+            width: 80px;
+        }
+        .prop-row input {
+            width: 100px;
+            background: #222;
+            border: 1px solid #555;
+            color: #fff;
+            padding: 2px;
+            font-size: 11px;
+        }
+        .prop-row input[type="color"] {
+            width: 100px;
+            padding: 0;
+            height: 20px;
+        }
+        
+        /* Orientation Gizmo */
+        #orientation-gizmo {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 100px;
+            height: 100px;
+            z-index: 999;
+            pointer-events: none; 
+        }
+    </style>
+    <!-- Load Three.js from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+
+    <!-- PWA Settings -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="icon-192.png">
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('service-worker.js');
+        }
+    </script>
+</head>
+<body>
+
+<header>
+    <!-- Header Left -->
+    <div>
+        <button id="btn-base">BASE</button>
+        <button id="btn-clear">CLEAR</button>
+        <button id="btn-copy">COPY</button>
+        <button id="btn-merge">MERGE</button>
+    </div>
+
+    <h1>TextToCAD 3D v0.40</h1>
+
+    <!-- Header Right -->
+    <div>
+        <input type="file" id="file-import" accept=".glb,.gltf" style="display:none;">
+        <input type="file" id="dxf-import" accept=".dxf" style="display:none;">
+        
+        <button id="btn-undo">Undo</button>
+        <button id="btn-redo">Redo</button>
+        <span style="margin: 0 5px; color:#555;">|</span>
+        <button id="btn-import-dxf">Import DXF</button>
+        <button id="btn-import">Import GLB</button>
+        <button id="btn-export">Export GLB</button>
+    </div>
+</header>
+
+<div id="main-container">
+    <div id="canvas-container"></div>
+    <div id="overlay">
+        L-Drag: Rotate | L-LongPress: Move Camera (Zone) | L-Click: Select | R-Click: Snap
+    </div>
+    <div id="cmd-list-panel" style="position: absolute; top: 10px; left: 10px; display: flex; flex-direction: column; gap: 5px;">
+        <button onclick="setCmd('BOX')">BOX</button>
+        <button onclick="setCmd('SPHERE')">SPHERE</button>
+    </div>
+    
+    <!-- Orientation Gizmo Container -->
+    <div id="orientation-gizmo"></div>
+
+    <!-- Properties Panel -->
+    <div id="properties-panel">
+        <h3>Properties</h3>
+        <div id="prop-content"></div>
+    </div>
+</div>
+
+<div id="bottom-pane">
+    <div id="log">Welcome to TextToCAD 3D.<br>Try: BOX 0 0 0 50 50 50 red</div>
+    <div id="command-pane">
+        <div id="info-bar">
+            <div id="layer-controls">
+                <!-- Toggles injected here -->
+            </div>
+        </div>
+        <div id="command-area">
+            <input type="text" id="command-input" placeholder="Command (e.g. BOX 0 0 0 50 50 50)" autocomplete="off">
+            <button id="btn-exec">Exec</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- System Globals ---
+    let scene, camera, renderer, controls;
+    let raycaster, mouse;
+    let userGroup; 
+    let selectedObject = null;
+    
+    // Gizmo Globals
+    let gizmoScene, gizmoCamera, gizmoRenderer;
+
+    // Transparency Management
+    let fadedObjects = [];
+
+    // History
+    let historyStack = [];
+    let historyStep = -1;
+    const MAX_HISTORY = 50;
+
+    // Command History
+    let cmdHistory = [];
+    let cmdHistoryIndex = -1;
+
+    // Layer System
+    let layerVisibility = new Array(11).fill(true); // Index 1-10
+
+    // DOM Elements (Initialized in init)
+    let container, logDiv, cmdInput, layerControls;
+    let propPanel, propContent, gizmoContainer;
+
+    // Navigation State
+    let isNavigating = false;
+    let navDirection = null;
+    let navSpeed = 2.0;
+    let isShiftPressed = false;
+
+    // --- Helper: Get First Visible Layer ---
+    function getFirstVisibleLayer() {
+        for (let i = 1; i <= 10; i++) {
+            if (layerVisibility[i]) return i;
+        }
+        return 1; // Default fallback if all hidden
+    }
+
+    // --- Initialization ---
+    function init() {
+        // 1. DOM Element Binding
+        container = document.getElementById('canvas-container');
+        logDiv = document.getElementById('log');
+        cmdInput = document.getElementById('command-input');
+        layerControls = document.getElementById('layer-controls');
+        propPanel = document.getElementById('properties-panel');
+        propContent = document.getElementById('prop-content');
+        gizmoContainer = document.getElementById('orientation-gizmo');
+
+        if (!container || !layerControls || !propPanel || !gizmoContainer) {
+            console.error("Critical DOM elements missing.");
+            return;
+        }
+
+        try {
+            // 2. Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x222222);
+            
+            // User Group
+            userGroup = new THREE.Group();
+            userGroup.name = "UserObjects";
+            scene.add(userGroup);
+
+            // 3. Camera
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 1, 10000);
+            camera.position.set(200, 200, 200);
+            camera.lookAt(0, 0, 0); 
+
+            // 4. Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.autoClear = false; 
+            container.appendChild(renderer.domElement);
+
+            // 5. Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.enablePan = true; 
+            controls.target.set(0, 0, 0); 
+
+            // 6. Helpers
+            const gridHelper = new THREE.GridHelper(1000, 50, 0x888888, 0x444444);
+            gridHelper.userData.isHelper = true;
+            scene.add(gridHelper);
+            
+            const axesHelper = new THREE.AxesHelper(100); 
+            axesHelper.userData.isHelper = true;
+            scene.add(axesHelper);
+
+            // 7. Lights
+            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+            hemiLight.position.set(0, 200, 0);
+            scene.add(hemiLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(100, 200, 100);
+            scene.add(dirLight);
+            
+            const backLight = new THREE.DirectionalLight(0xffffff, 0.4);
+            backLight.position.set(-100, -200, -100);
+            scene.add(backLight);
+
+            // 8. Raycaster
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            // 9. Gizmo Initialization
+            initGizmo();
+
+            // 10. UI Init
+            initLayerUI();
+
+            // Initial History Save
+            saveHistory();
+
+            // Event Listeners
+            window.addEventListener('resize', onWindowResize);
+            
+            // Setup Mouse/Input Events
+            setupInputEvents();
+            
+            // Force initial resize
+            onWindowResize();
+
+            // Start Loop
+            animate();
+            
+            log("System Initialized.");
+
+        } catch (e) {
+            console.error(e);
+            if (logDiv) log("Error initializing: " + e.message, 'error');
+        }
+    }
+
+    function initGizmo() {
+        gizmoScene = new THREE.Scene();
+        const width = 100;
+        const height = 100;
+
+        gizmoRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        gizmoRenderer.setSize(width, height);
+        gizmoContainer.appendChild(gizmoRenderer.domElement);
+
+        gizmoCamera = new THREE.OrthographicCamera(-2, 2, 2, -2, 0.1, 50);
+        gizmoCamera.position.set(0, 0, 10);
+        gizmoCamera.lookAt(0, 0, 0);
+
+        const axes = new THREE.Group();
+        
+        const xGeo = new THREE.CylinderGeometry(0.1, 0.1, 2, 8);
+        const xMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const xAxis = new THREE.Mesh(xGeo, xMat);
+        xAxis.rotation.z = -Math.PI / 2;
+        xAxis.position.x = 1;
+        axes.add(xAxis);
+        
+        const yGeo = new THREE.CylinderGeometry(0.1, 0.1, 2, 8);
+        const yMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+        const yAxis = new THREE.Mesh(yGeo, yMat);
+        yAxis.position.y = 1;
+        axes.add(yAxis);
+
+        const zGeo = new THREE.CylinderGeometry(0.1, 0.1, 2, 8);
+        const zMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+        const zAxis = new THREE.Mesh(zGeo, zMat);
+        zAxis.rotation.x = Math.PI / 2;
+        zAxis.position.z = 1;
+        axes.add(zAxis);
+        
+        gizmoScene.add(axes);
+    }
+
+    function updateGizmo() {
+        if(gizmoCamera && gizmoRenderer) {
+            gizmoCamera.position.copy(camera.position).sub(controls.target).normalize().multiplyScalar(5);
+            gizmoCamera.quaternion.copy(camera.quaternion);
+            gizmoCamera.lookAt(0, 0, 0);
+            gizmoRenderer.render(gizmoScene, gizmoCamera);
+        }
+    }
+
+    function setupInputEvents() {
+        let mouseDownPos = new THREE.Vector2();
+        let isMouseDown = false;
+        let longClickTimer = null;
+        const LONG_CLICK_DURATION = 500; 
+        const DRAG_THRESHOLD = 10; 
+
+        renderer.domElement.addEventListener('pointerdown', (e) => {
+            mouseDownPos.set(e.clientX, e.clientY);
+            isMouseDown = true;
+            
+            if (e.button === 0) { 
+                longClickTimer = setTimeout(() => {
+                    isNavigating = true;
+                    controls.enabled = false; 
+                    updateNavDirection(e.clientX, e.clientY);
+                    log("Navigation Mode Active");
+                    document.body.style.cursor = 'move';
+                }, LONG_CLICK_DURATION);
+            }
+            else if (e.button === 1) { 
+                e.preventDefault();
+                execute(cmdInput.value);
+            }
+        });
+
+        renderer.domElement.addEventListener('pointermove', (e) => {
+            if (longClickTimer && isMouseDown) {
+                const dx = Math.abs(e.clientX - mouseDownPos.x);
+                const dy = Math.abs(e.clientY - mouseDownPos.y);
+                if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
+                    clearTimeout(longClickTimer);
+                    longClickTimer = null;
+                }
+            }
+            if (isNavigating) {
+                updateNavDirection(e.clientX, e.clientY);
+            }
+        });
+
+        renderer.domElement.addEventListener('pointerup', (e) => {
+            isMouseDown = false;
+            if (longClickTimer) {
+                clearTimeout(longClickTimer);
+                longClickTimer = null;
+            }
+            if (isNavigating) {
+                isNavigating = false;
+                navDirection = null;
+                controls.enabled = true; 
+                document.body.style.cursor = 'default';
+                log("Navigation Mode Ended");
+            } else {
+                const dx = Math.abs(e.clientX - mouseDownPos.x);
+                const dy = Math.abs(e.clientY - mouseDownPos.y);
+                if (dx < DRAG_THRESHOLD && dy < DRAG_THRESHOLD) {
+                    if (e.button === 0) onMouseClick(e); 
+                    else if (e.button === 2) onRightClick(e); 
+                }
+            }
+        });
+        
+        window.addEventListener('keydown', e => { 
+            if(e.key === 'Shift') isShiftPressed = true; 
+            
+            if (e.ctrlKey || e.metaKey) {
+                if (e.key === 'z' || e.key === 'Z') {
+                    e.preventDefault();
+                    undo();
+                } else if (e.key === 'y' || e.key === 'Y') {
+                    e.preventDefault();
+                    redo();
+                }
+            }
+        });
+        
+        window.addEventListener('keyup', e => { if(e.key === 'Shift') isShiftPressed = false; });
+        window.addEventListener('contextmenu', e => e.preventDefault());
+
+        const btnImport = document.getElementById('btn-import');
+        const fileImport = document.getElementById('file-import');
+        const btnExport = document.getElementById('btn-export');
+        const btnImportDxf = document.getElementById('btn-import-dxf');
+        const dxfImport = document.getElementById('dxf-import');
+
+        if(btnImport) btnImport.addEventListener('click', () => fileImport.click());
+        if(fileImport) fileImport.addEventListener('change', handleImport);
+        if(btnExport) btnExport.addEventListener('click', handleExport);
+        if(btnImportDxf) btnImportDxf.addEventListener('click', () => dxfImport.click());
+        if(dxfImport) dxfImport.addEventListener('change', handleImportDXF);
+
+        document.getElementById('btn-undo').addEventListener('click', undo);
+        document.getElementById('btn-redo').addEventListener('click', redo);
+        
+        document.getElementById('btn-exec').addEventListener('click', () => execute(cmdInput.value));
+        cmdInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') execute(cmdInput.value);
+            else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (cmdHistory.length > 0) {
+                    if (cmdHistoryIndex > 0) cmdHistoryIndex--;
+                    cmdInput.value = cmdHistory[cmdHistoryIndex];
+                }
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (cmdHistoryIndex < cmdHistory.length - 1) {
+                    cmdHistoryIndex++;
+                    cmdInput.value = cmdHistory[cmdHistoryIndex];
+                } else {
+                    cmdHistoryIndex = cmdHistory.length;
+                    cmdInput.value = '';
+                }
+            }
+        });
+        
+        document.getElementById('btn-clear').addEventListener('click', cmdClear);
+        document.getElementById('btn-base').addEventListener('click', () => setCmd('BASE'));
+        document.getElementById('btn-copy').addEventListener('click', () => setCmd('COPY'));
+        document.getElementById('btn-merge').addEventListener('click', () => setCmd('MERGE'));
+    }
+
+    // --- Properties Panel ---
+    function updatePropertiesPanel() {
+        propContent.innerHTML = '';
+        
+        if (!selectedObject) {
+            propPanel.style.display = 'none';
+            return;
+        }
+        
+        propPanel.style.display = 'block';
+        const obj = selectedObject;
+        
+        addPropInput('Position X', obj.position.x, val => { obj.position.x = val; saveHistory(); });
+        addPropInput('Position Y', obj.position.y, val => { obj.position.y = val; saveHistory(); });
+        addPropInput('Position Z', obj.position.z, val => { obj.position.z = val; saveHistory(); });
+        
+        addPropInput('Layer', obj.userData.layer || 1, val => { 
+            obj.userData.layer = parseInt(val); 
+            updateSceneVisibility(); 
+            saveHistory(); 
+        });
+
+        if (obj.material && obj.material.color) {
+            addPropColor('Color', '#' + obj.material.color.getHexString(), val => {
+                obj.material.color.set(val);
+                saveHistory();
+            });
+        }
+
+        if (obj.geometry) {
+            const type = obj.geometry.type;
+            const params = obj.geometry.parameters || {};
+
+            if (type === 'BoxGeometry') {
+                addPropInput('Width', params.width, val => updateGeometry(obj, 'BoxGeometry', { ...params, width: val }));
+                addPropInput('Height', params.height, val => updateGeometry(obj, 'BoxGeometry', { ...params, height: val }));
+                addPropInput('Depth', params.depth, val => updateGeometry(obj, 'BoxGeometry', { ...params, depth: val }));
+            } else if (type === 'SphereGeometry') {
+                addPropInput('Radius', params.radius, val => updateGeometry(obj, 'SphereGeometry', { ...params, radius: val }));
+            }
+        }
+    }
+
+    function addPropInput(label, value, onChange) {
+        const row = document.createElement('div');
+        row.className = 'prop-row';
+        const lbl = document.createElement('label');
+        lbl.textContent = label;
+        const inp = document.createElement('input');
+        inp.type = 'number';
+        inp.step = 'any';
+        inp.value = Number(value).toFixed(2); 
+        inp.onchange = (e) => {
+            const n = parseFloat(e.target.value);
+            if (!isNaN(n)) onChange(n);
+        };
+        row.appendChild(lbl);
+        row.appendChild(inp);
+        propContent.appendChild(row);
+    }
+
+    function addPropColor(label, value, onChange) {
+        const row = document.createElement('div');
+        row.className = 'prop-row';
+        const lbl = document.createElement('label');
+        lbl.textContent = label;
+        const inp = document.createElement('input');
+        inp.type = 'color';
+        inp.value = value;
+        inp.onchange = (e) => onChange(e.target.value);
+        row.appendChild(lbl);
+        row.appendChild(inp);
+        propContent.appendChild(row);
+    }
+
+    function updateGeometry(mesh, type, newParams) {
+        if (mesh.geometry) mesh.geometry.dispose();
+        let newGeo;
+        if (type === 'BoxGeometry') {
+            newGeo = new THREE.BoxGeometry(newParams.width, newParams.height, newParams.depth);
+        } else if (type === 'SphereGeometry') {
+            newGeo = new THREE.SphereGeometry(newParams.radius, 32, 32);
+        }
+        if (newGeo) {
+            mesh.geometry = newGeo;
+            saveHistory();
+        }
+    }
+
+    // --- Handlers ---
+    const handleImport = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (re) => {
+            const contents = re.target.result;
+            const loader = new THREE.GLTFLoader();
+            loader.parse(contents, '', (gltf) => {
+                const targetLayer = getFirstVisibleLayer(); // Import to first visible layer
+                gltf.scene.traverse(child => {
+                    if (child.isMesh) child.userData.layer = targetLayer;
+                });
+                userGroup.add(gltf.scene); 
+                log(`Imported ${file.name} to Layer ${targetLayer}`);
+                saveHistory();
+            }, (err) => {
+                log('Error parsing GLTF', 'error');
+                console.error(err);
+            });
+        };
+        reader.readAsArrayBuffer(file);
+        e.target.value = '';
+    };
+
+    const handleExport = () => {
+        const exporter = new THREE.GLTFExporter();
+        userGroup.updateMatrixWorld(true); 
+        exporter.parse(userGroup, (gltf) => {
+            const blob = new Blob([gltf], { type: 'model/gltf-binary' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `scene_${Date.now()}.glb`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            log('Exported GLB.');
+        }, { binary: true });
+    };
+    
+    const handleImportDXF = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (re) => {
+            const text = re.target.result;
+            try {
+                const shapes = parseDXF(text);
+                renderDXFToScene(shapes);
+                log(`Imported DXF: ${file.name} (${shapes.length} entities)`);
+                saveHistory();
+            } catch(err) {
+                log('Error parsing DXF', 'error');
+                console.error(err);
+            }
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+    };
+
+    // --- Layer UI ---
+    function initLayerUI() {
+        if(!layerControls) return;
+        updateLayerToggles();
+    }
+
+    function updateLayerToggles() {
+        if(!layerControls) return;
+        layerControls.innerHTML = '';
+        for (let i = 1; i <= 10; i++) {
+            const span = document.createElement('span');
+            span.className = 'layer-toggle' + (layerVisibility[i] ? ' visible' : '');
+            span.textContent = i;
+            span.onclick = () => {
+                layerVisibility[i] = !layerVisibility[i];
+                updateLayerToggles();
+                updateSceneVisibility();
+            };
+            layerControls.appendChild(span);
+        }
+    }
+
+    function updateSceneVisibility() {
+        userGroup.traverse(child => {
+            if (child.userData.layer !== undefined) {
+                child.visible = layerVisibility[child.userData.layer];
+            }
+        });
+    }
+
+    // --- History System ---
+    function saveHistory() {
+        userGroup.updateMatrixWorld(true);
+        if (historyStep < historyStack.length - 1) {
+            historyStack = historyStack.slice(0, historyStep + 1);
+        }
+        const state = userGroup.toJSON();
+        historyStack.push(state);
+        historyStep++;
+        if (historyStack.length > MAX_HISTORY) {
+            historyStack.shift();
+            historyStep--;
+        }
+    }
+
+    function undo() {
+        if (historyStep > 0) {
+            historyStep--;
+            loadHistory(historyStack[historyStep]);
+            log("Undo");
+        } else {
+            log("Nothing to undo.");
+        }
+    }
+
+    function redo() {
+        if (historyStep < historyStack.length - 1) {
+            historyStep++;
+            loadHistory(historyStack[historyStep]);
+            log("Redo");
+        } else {
+            log("Nothing to redo.");
+        }
+    }
+
+    function loadHistory(state) {
+        scene.remove(userGroup);
+        selectedObject = null;
+        updatePropertiesPanel(); 
+
+        const loader = new THREE.ObjectLoader();
+        userGroup = loader.parse(state);
+        scene.add(userGroup);
+        userGroup.updateMatrixWorld(true);
+        updateSceneVisibility();
+    }
+
+    // --- DXF Parser ---
+    function parseDXF(text) {
+        const lines = text.replace(/\r\n/g, '\n').split('\n').map(l => l.trim());
+        const newShapes = [];
+        let currentEntity = null;
+        for (let i = 0; i < lines.length - 1; i += 2) {
+            const code = lines[i];
+            const value = lines[i+1];
+            if (code === '0') {
+                if (['LINE','CIRCLE','ARC','LWPOLYLINE'].includes(value)) {
+                    currentEntity = { type: value, layer: 1 }; 
+                    newShapes.push(currentEntity);
+                } else {
+                    currentEntity = null;
+                }
+            } else if (currentEntity) {
+                if (code === '8') {
+                    const l = parseInt(value);
+                    if (!isNaN(l) && l >= 1 && l <= 10) currentEntity.layer = l;
+                } else if (currentEntity.type === 'LINE') {
+                    if (code === '10') currentEntity.x1 = parseFloat(value);
+                    if (code === '20') currentEntity.y1 = parseFloat(value);
+                    if (code === '11') currentEntity.x2 = parseFloat(value);
+                    if (code === '21') currentEntity.y2 = parseFloat(value);
+                } else if (currentEntity.type === 'CIRCLE') {
+                    if (code === '10') currentEntity.cx = parseFloat(value);
+                    if (code === '20') currentEntity.cy = parseFloat(value);
+                    if (code === '40') currentEntity.r = parseFloat(value);
+                } else if (currentEntity.type === 'ARC') {
+                    if (code === '10') currentEntity.cx = parseFloat(value);
+                    if (code === '20') currentEntity.cy = parseFloat(value);
+                    if (code === '40') currentEntity.r = parseFloat(value);
+                    if (code === '50') currentEntity.startAngle = parseFloat(value) * Math.PI / 180;
+                    if (code === '51') currentEntity.endAngle = parseFloat(value) * Math.PI / 180;
+                } else if (currentEntity.type === 'LWPOLYLINE') {
+                    if (code === '10') {
+                        if (!currentEntity.vertices) currentEntity.vertices = [];
+                        currentEntity.vertices.push({ x: parseFloat(value), y: null });
+                    } else if (code === '20') {
+                        const v = currentEntity.vertices[currentEntity.vertices.length - 1];
+                        if (v) v.y = parseFloat(value);
+                    }
+                }
+            }
+        }
+        return newShapes;
+    }
+
+    function renderDXFToScene(shapes) {
+        const material = new THREE.LineBasicMaterial({ color: 0x88ccff }); 
+        const group = new THREE.Group();
+        group.name = 'DXF_Import_' + Date.now();
+        group.position.set(0,0,0);
+
+        shapes.forEach(s => {
+            let geometry;
+            let mesh = null;
+            if (s.type === 'LINE') {
+                if(s.x1 === undefined || s.y1 === undefined || s.x2 === undefined || s.y2 === undefined) return;
+                // Map CAD Y to Three.js -Z to align Top View
+                const points = [new THREE.Vector3(s.x1, 0, -s.y1), new THREE.Vector3(s.x2, 0, -s.y2)];
+                geometry = new THREE.BufferGeometry().setFromPoints(points);
+                mesh = new THREE.Line(geometry, material);
+            } else if (s.type === 'CIRCLE') {
+                if(s.cx === undefined || s.cy === undefined || s.r === undefined) return;
+                const curve = new THREE.EllipseCurve(s.cx, s.cy, s.r, s.r, 0, 2 * Math.PI, false, 0);
+                const points = curve.getPoints(50).map(p => new THREE.Vector3(p.x, 0, -p.y));
+                geometry = new THREE.BufferGeometry().setFromPoints(points);
+                mesh = new THREE.Line(geometry, material);
+            } else if (s.type === 'ARC') {
+                if(s.cx === undefined || s.cy === undefined || s.r === undefined) return;
+                const curve = new THREE.EllipseCurve(s.cx, s.cy, s.r, s.r, s.startAngle, s.endAngle, false, 0);
+                const points = curve.getPoints(50).map(p => new THREE.Vector3(p.x, 0, -p.y));
+                geometry = new THREE.BufferGeometry().setFromPoints(points);
+                mesh = new THREE.Line(geometry, material);
+            } else if (s.type === 'LWPOLYLINE') {
+                const points = [];
+                s.vertices.forEach(v => {
+                    if (v.x !== undefined && v.y !== undefined) {
+                        points.push(new THREE.Vector3(v.x, 0, -v.y));
+                    }
+                });
+                if (points.length > 1) {
+                    geometry = new THREE.BufferGeometry().setFromPoints(points);
+                    mesh = new THREE.Line(geometry, material);
+                }
+            }
+            
+            if (mesh) {
+                mesh.userData.layer = s.layer || 1;
+                mesh.visible = layerVisibility[mesh.userData.layer];
+                group.add(mesh);
+            }
+        });
+        userGroup.add(group); 
+    }
+
+    function updateNavDirection(cx, cy) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        const x = cx - rect.left - rect.width / 2;
+        const y = cy - rect.top - rect.height / 2;
+        
+        if (y < -Math.abs(x)) navDirection = 'FORWARD';
+        else if (y > Math.abs(x)) navDirection = 'BACKWARD';
+        else if (x > Math.abs(y)) navDirection = 'RIGHT';
+        else if (x < -Math.abs(y)) navDirection = 'LEFT';
+    }
+
+    function processNavigation() {
+        if (!isNavigating || !navDirection) return;
+        const forward = new THREE.Vector3();
+        camera.getWorldDirection(forward);
+        const right = new THREE.Vector3();
+        right.crossVectors(forward, camera.up).normalize();
+        const up = camera.up.clone();
+        const moveVec = new THREE.Vector3();
+
+        if (navDirection === 'FORWARD') {
+            if (isShiftPressed) moveVec.addScaledVector(up, navSpeed); 
+            else moveVec.addScaledVector(forward, navSpeed); 
+        } else if (navDirection === 'BACKWARD') {
+            if (isShiftPressed) moveVec.addScaledVector(up, -navSpeed); 
+            else moveVec.addScaledVector(forward, -navSpeed); 
+        } else if (navDirection === 'RIGHT') {
+            moveVec.addScaledVector(right, navSpeed);
+        } else if (navDirection === 'LEFT') {
+            moveVec.addScaledVector(right, -navSpeed);
+        }
+        camera.position.add(moveVec);
+        controls.target.add(moveVec); 
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        processNavigation();
+        
+        updateObstructionTransparency(); 
+        updateGizmo();
+
+        controls.update();
+        renderer.render(scene, camera);
+        
+        const p = camera.position;
+        // Cam info display removed
+    }
+
+    function updateGizmo() {
+        if(gizmoCamera && gizmoRenderer) {
+            gizmoCamera.position.copy(camera.position).sub(controls.target).normalize().multiplyScalar(5);
+            gizmoCamera.quaternion.copy(camera.quaternion);
+            gizmoCamera.lookAt(0,0,0);
+            gizmoRenderer.render(gizmoScene, gizmoCamera);
+        }
+    }
+
+    // Transparency logic
+    function updateObstructionTransparency() {
+        fadedObjects.forEach(obj => {
+            if (obj.material) {
+                obj.material.opacity = 1.0;
+                obj.material.transparent = false;
+                obj.material.needsUpdate = true;
+            }
+        });
+        fadedObjects = [];
+
+        const target = new THREE.Vector3(0, 0, 0);
+        const direction = new THREE.Vector3().subVectors(target, camera.position);
+        const distance = direction.length();
+        direction.normalize();
+
+        const obsRaycaster = new THREE.Raycaster(camera.position, direction);
+        obsRaycaster.far = Math.max(0, distance - 20); 
+
+        const intersects = obsRaycaster.intersectObjects(userGroup.children, true);
+
+        intersects.forEach(hit => {
+            const obj = hit.object;
+            if (obj.isMesh) {
+                if (!fadedObjects.includes(obj)) {
+                    if (obj.material && !Array.isArray(obj.material)) {
+                        obj.material.transparent = true;
+                        obj.material.opacity = 0.2;
+                        obj.material.needsUpdate = true;
+                        fadedObjects.push(obj);
+                    }
+                }
+            }
+        });
+    }
+
+    function setCmd(cmd) {
+        cmdInput.value = cmd + ' ';
+        cmdInput.focus();
+    }
+
+    function onRightClick(event) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+        const visibleObjects = [];
+        userGroup.traverse(child => {
+            if (child.isMesh && child.visible) visibleObjects.push(child);
+        });
+        const intersects = raycaster.intersectObjects(visibleObjects, false);
+
+        if (intersects.length > 0) {
+            const pt = intersects[0].point;
+            let snapPt = pt;
+            const mesh = intersects[0].object;
+            if (mesh.geometry) {
+                const posAttr = mesh.geometry.attributes.position;
+                if (posAttr) {
+                    let minD = Infinity;
+                    let closestV = new THREE.Vector3();
+                    const localPt = mesh.worldToLocal(pt.clone());
+                    for (let i = 0; i < posAttr.count; i++) {
+                        const v = new THREE.Vector3().fromBufferAttribute(posAttr, i);
+                        const d = v.distanceToSquared(localPt);
+                        if (d < minD) {
+                            minD = d;
+                            closestV.copy(v);
+                        }
+                    }
+                    if (minD < 10000*10000) { 
+                        snapPt = mesh.localToWorld(closestV);
+                        log("Snapped to vertex.");
+                    }
+                }
+            }
+            const coordStr = `${snapPt.x.toFixed(2)} ${snapPt.y.toFixed(2)} ${snapPt.z.toFixed(2)} `;
+            cmdInput.value += coordStr;
+            cmdInput.focus();
+            log(`Pasted coords: ${coordStr}`);
+        }
+    }
+
+    function onMouseClick(event) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+        const visibleObjects = [];
+        userGroup.traverse(child => {
+            if (child.isMesh && child.visible) visibleObjects.push(child);
+        });
+        const intersects = raycaster.intersectObjects(visibleObjects, false);
+
+        if (intersects.length > 0) {
+            const target = intersects[0].object;
+            if (selectedObject !== target) {
+                if (selectedObject) unhighlight(selectedObject);
+                selectedObject = target;
+                highlight(selectedObject);
+                const l = selectedObject.userData.layer || '?';
+                log(`Selected obj ID: ${selectedObject.uuid} (Layer ${l})`);
+                updatePropertiesPanel(); 
+            }
+        } else {
+            if (selectedObject) {
+                unhighlight(selectedObject);
+                selectedObject = null;
+                log("Deselected.");
+                updatePropertiesPanel(); 
+            }
+        }
+    }
+
+    function highlight(obj) {
+        if (obj.material && obj.material.emissive) {
+            obj.userData.currentHex = obj.material.emissive.getHex();
+            obj.material.emissive.setHex(0xff0000); 
+        }
+    }
+
+    function unhighlight(obj) {
+        if (obj.material && obj.material.emissive) {
+            obj.material.emissive.setHex(obj.userData.currentHex || 0x000000);
+        }
+    }
+
+    function onWindowResize() {
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+    }
+
+    // --- Logic & Commands ---
+    function log(msg, type='info') {
+        const d = document.createElement('div');
+        d.textContent = msg;
+        if(type === 'error') d.style.color = '#f55';
+        logDiv.appendChild(d);
+        logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function parseColor(str) {
+        if (!str) return 0xcccccc; 
+        if (str.startsWith('#')) return parseInt(str.replace('#', '0x'), 16);
+        const colors = {
+            'red': 0xff0000, 'green': 0x00ff00, 'blue': 0x0000ff,
+            'white': 0xffffff, 'black': 0x000000, 'gray': 0x888888,
+            'yellow': 0xffff00, 'cyan': 0x00ffff, 'magenta': 0xff00ff,
+            'orange': 0xffa500
+        };
+        return colors[str.toLowerCase()] || 0xcccccc; 
+    }
+
+    function cmdBox(args) {
+        if (args.length < 6) throw new Error("Usage: BOX x y z w h d [color]");
+        const [x, y, z, w, h, d] = args.map(parseFloat);
+        const colorStr = args[6];
+        if (isNaN(x) || isNaN(y) || isNaN(z) || isNaN(w) || isNaN(h) || isNaN(d)) throw new Error("Invalid numbers");
+
+        const geometry = new THREE.BoxGeometry(w, h, d);
+        const material = new THREE.MeshLambertMaterial({ color: parseColor(colorStr) });
+        const cube = new THREE.Mesh(geometry, material);
+        cube.position.set(x + w/2, y + h/2, z + d/2);
+        
+        const targetLayer = getFirstVisibleLayer();
+        cube.userData.layer = targetLayer; 
+        cube.visible = true;
+
+        userGroup.add(cube); 
+        log(`Created BOX at (${x},${y},${z}) on Layer ${targetLayer}`);
+    }
+
+    function cmdSphere(args) {
+        if (args.length < 4) throw new Error("Usage: SPHERE x y z r [color]");
+        const [x, y, z, r] = args.map(parseFloat);
+        const colorStr = args[4];
+        if (isNaN(x) || isNaN(y) || isNaN(z) || isNaN(r)) throw new Error("Invalid numbers");
+
+        const geometry = new THREE.SphereGeometry(r, 32, 32);
+        const material = new THREE.MeshLambertMaterial({ color: parseColor(colorStr) });
+        const sphere = new THREE.Mesh(geometry, material);
+        sphere.position.set(x, y, z);
+        
+        const targetLayer = getFirstVisibleLayer();
+        sphere.userData.layer = targetLayer;
+        sphere.visible = true;
+
+        userGroup.add(sphere); 
+        log(`Created SPHERE at (${x},${y},${z}) on Layer ${targetLayer}`);
+    }
+
+    function cmdBase(args) {
+        if (args.length < 3) throw new Error("Usage: BASE x y z");
+        const [bx, by, bz] = args.map(parseFloat);
+        if (isNaN(bx) || isNaN(by) || isNaN(bz)) throw new Error("Invalid coordinates");
+
+        let count = 0;
+        userGroup.children.forEach(child => {
+            if(child.visible) {
+                child.position.x -= bx;
+                child.position.y -= by;
+                child.position.z -= bz;
+                child.updateMatrix(); 
+                count++;
+            }
+        });
+        log(`Base set to (${bx},${by},${bz}). Shifted ${count} visible objects.`);
+    }
+
+    function cmdClear() {
+        for (let i = userGroup.children.length - 1; i >= 0; i--) {
+            const obj = userGroup.children[i];
+            userGroup.remove(obj);
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) obj.material.dispose();
+        }
+        log("Scene cleared.");
+        updatePropertiesPanel(); 
+    }
+
+    function cmdCopy(args) {
+        if (args.length < 2) throw new Error("Usage: COPY src_layer dest_layer");
+        const src = parseInt(args[0]);
+        const dest = parseInt(args[1]);
+        if (isNaN(src) || isNaN(dest)) throw new Error("Invalid layers");
+
+        const newObjects = [];
+        userGroup.traverse(child => {
+            if ((child.isMesh || child.isLine) && child.userData.layer === src) {
+                const clone = child.clone();
+                clone.userData.layer = dest;
+                
+                if (child.parent && child.parent !== userGroup) {
+                    child.parent.updateMatrixWorld();
+                    clone.applyMatrix4(child.parent.matrixWorld);
+                }
+                
+                clone.visible = layerVisibility[dest];
+                newObjects.push(clone);
+            }
+        });
+
+        if (newObjects.length === 0) {
+            log("No objects found on source layer.");
+            return;
+        }
+
+        newObjects.forEach(obj => userGroup.add(obj));
+        log(`Copied ${newObjects.length} objects from Layer ${src} to ${dest}.`);
+    }
+
+    function cmdMerge(args) {
+        if (args.length < 2) throw new Error("Usage: MERGE layer1 layer2");
+        const l1 = parseInt(args[0]);
+        const l2 = parseInt(args[1]);
+        if (isNaN(l1) || isNaN(l2)) throw new Error("Invalid layers");
+
+        const target = Math.min(l1, l2);
+        const source = Math.max(l1, l2);
+
+        let count = 0;
+        userGroup.traverse(child => {
+            if ((child.isMesh || child.isLine) && child.userData.layer === source) {
+                child.userData.layer = target;
+                child.visible = layerVisibility[target];
+                count++;
+            }
+        });
+        
+        log(`Merged ${count} objects from Layer ${source} to ${target}.`);
+    }
+
+    function execute(cmdStr) {
+        const parts = cmdStr.trim().split(/\s+/);
+        if (parts.length === 0 || parts[0] === "") return;
+        cmdHistory.push(cmdStr);
+        cmdHistoryIndex = cmdHistory.length;
+        const cmd = parts[0].toUpperCase();
+        const args = parts.slice(1);
+        log(`> ${cmdStr}`);
+        cmdInput.value = '';
+        try {
+            let changed = false;
+            if (cmd === 'BOX') { cmdBox(args); changed = true; }
+            else if (cmd === 'SPHERE') { cmdSphere(args); changed = true; }
+            else if (cmd === 'BASE') { cmdBase(args); changed = true; }
+            else if (cmd === 'CLEAR') { cmdClear(); changed = true; }
+            else if (cmd === 'COPY') { cmdCopy(args); changed = true; }
+            else if (cmd === 'MERGE') { cmdMerge(args); changed = true; }
+            else throw new Error("Unknown command");
+            if (changed) saveHistory();
+        } catch (e) {
+            log(e.message, 'error');
+        }
+    }
+
+    // Start
+    window.addEventListener('DOMContentLoaded', init);
+
+</script>
+</body>
+</html>
